@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <exception>
 #include <filesystem>
 #include <fstream>
@@ -6,6 +7,7 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
+
 #include "downloader.hpp"
 #include "nlohmann/json.hpp"
 
@@ -16,6 +18,7 @@ using std::ostringstream;
 using json = nlohmann::json;
 
 int main(int argc, char** argv) {
+    const static uint32_t SNITCH_MAX = 200000;
     std::filesystem::path myself(argv[0]);
     std::filesystem::path parent = myself.parent_path();
     std::filesystem::path path_link_file = parent / "links.txt";
@@ -57,7 +60,13 @@ int main(int argc, char** argv) {
         set.erase(key);
     }
 
+    uint32_t rule_count = 0;
     for (const auto& i : set) {
+        if (++rule_count > SNITCH_MAX) {
+            std::cerr << "Warning, too many rules, one little snitch rule group can only contain " << SNITCH_MAX
+                      << "rules at max. I will skip remaining rules to ensure the result able to be imported." << endl;
+            break;
+        }
         result["denied-remote-hosts"].emplace_back(i);
     }
 

@@ -1,2 +1,5 @@
 https://cdn.jsdelivr.net/gh/neoFelhz/neohosts@gh-pages/full/hosts
 https://someonewhocares.org/hosts/hosts
+https://raw.githubusercontent.com/Goooler/1024_hosts/master/hosts
+https://raw.githubusercontent.com/jdlingyu/ad-wars/master/hosts
+http://sbc.io/hosts/alternates/fakenews-gambling/hosts

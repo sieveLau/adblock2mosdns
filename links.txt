@@ -1,0 +1,2 @@
+https://cdn.jsdelivr.net/gh/neoFelhz/neohosts@gh-pages/full/hosts
+https://someonewhocares.org/hosts/hosts

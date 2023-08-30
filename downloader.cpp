@@ -7,7 +7,7 @@ using curl::curl_ios;
 void add_host_to_set(const std::string& src, std::unordered_set<std::string>& dest) {
     std::istringstream in(src);
     std::string line;
-    const std::regex reg_hosts("\\S* (\\S*)");
+    const std::regex reg_hosts(R"(^[0-9a-zA-Z\.\:]{1,}(?:\t| ){1,}(\S*))");
     std::cmatch match;
     while ((std::getline(in, line))) {
         auto line_cstr = line.c_str();

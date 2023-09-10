@@ -15,3 +15,5 @@
 void add_host_to_set(const std::string& src, std::unordered_set<std::string>& dest);
 
 std::string download(const std::filesystem::path& links_file);
+std::string download(const std::string& url);
+bool download(const std::string& url, const std::filesystem::path& output_file);

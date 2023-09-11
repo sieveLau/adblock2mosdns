@@ -7,6 +7,7 @@
 #include <string>
 #include <unordered_set>
 #include "cxxopts.hpp"
+#include <thread>
 
 #include "downloader.hpp"
 #include "nlohmann/json.hpp"
@@ -41,6 +42,21 @@ void parse(const std::filesystem::path& input_file, std::unordered_set<std::stri
             excepts.insert(match[1]);
         }
     }
+}
+
+void write_to_file(std::filesystem::path output, const std::unordered_set<std::string>* data, const std::regex* keys_to_remove, const size_t size, std::string prefix){
+    ofstream out(output);
+    for (auto && rec : *data){
+        for (int i = 0;i<size;++i){
+            if (std::regex_match(rec.c_str(),keys_to_remove[i])) {
+                goto skipwrite;
+            }
+        }
+        out<<prefix<<rec<<'\n';
+    skipwrite:
+        ;
+    }
+    out.close();
 }
 
 int main(int argc, char** argv) {
@@ -141,24 +157,17 @@ int main(int argc, char** argv) {
         to_remove_regex_list[count++] = std::string(host_buffer);
     }
 
-    for (auto && rec : domains){
-        for (int i = 0;i<count;++i){
-            if (std::regex_match(rec.c_str(),to_remove_regex_list[i])) {
-                goto skipwrite;
-            }
-        }
-        output<<"domain:"<<rec<<'\n';
-        skipwrite:
-        ;
-    }
-    for (auto && rec : hosts){
-        for (int i = 0;i<count;++i){
-            if (std::regex_match(rec.c_str(),to_remove_regex_list[i])) goto skipwrite2;
-        }
-        output<<"full:"<<rec<<'\n';
-        skipwrite2:
-        ;
-    }
+    // todo: split into more threads
+    // todo: google re2
+    // todo: escape domain chars
+    // todo: combine regex into one
+    std::thread th1(write_to_file, parent / "ad_domains.txt",&domains,to_remove_regex_list,count,"domain:");
+    std::thread th2(write_to_file, parent / "ad_hosts.txt",&hosts,to_remove_regex_list,count,"full:");
+
+
+
+    th1.join();
+    th2.join();
 
 
     return 0;

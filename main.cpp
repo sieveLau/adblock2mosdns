@@ -6,11 +6,14 @@
 #include <ostream>
 #include <string>
 #include <unordered_set>
-#include "cxxopts.hpp"
 #include <thread>
 
 #include "downloader.hpp"
 #include "nlohmann/json.hpp"
+#include "cxxopts.hpp"
+#include "re2/re2.h"
+#include "fmt/core.h"
+
 
 using std::cout;
 using std::endl;
@@ -20,35 +23,42 @@ using std::ofstream;
 using std::ostringstream;
 using json = nlohmann::json;
 
+using std::filesystem::path;
 using std::filesystem::exists;
 using std::filesystem::create_directories;
 
-void parse(const std::filesystem::path& input_file, std::unordered_set<std::string>& domains, std::unordered_set<std::string>& hosts, std::unordered_set<std::string>& excepts) {
+void parse(const path& input_file, std::unordered_set<std::string>& domains, std::unordered_set<std::string>& hosts, std::unordered_set<std::string>& excepts) {
     std::ifstream in(input_file);
     std::string line;
-    const std::regex reg_hosts(R"(^[0-9a-zA-Z\.\:]{1,}(?:\t| ){1,}(\S*))");
-    const std::regex reg_excepts(R"(^@{2}\|{2}([0-9a-zA-Z\-_\.]*)(?:\^?|\/)\S*)");
-    const std::regex reg_domains(R"(^\|{2}([0-9a-zA-Z\-_\.]*)\^$)");
-    std::cmatch match;
+
+    RE2 reg_hosts(R"(^[0-9a-zA-Z\.\:]{1,}(?:\t| ){1,}(\S*))");
+    RE2 reg_excepts(R"(^@{2}\|{2}([0-9a-zA-Z\-_\.]*)(?:\^?|\/)\S*)");
+    RE2 reg_domains(R"(^\|{2}([0-9a-zA-Z\-_\.]*)\^$)");
+    std::string match;
     while ((std::getline(in, line))) {
-        auto line_cstr = line.c_str();
-        if (std::regex_match(line_cstr, match, reg_hosts)) {
-            hosts.insert(match[1]);
-        } else
-        if (std::regex_match(line_cstr, match, reg_domains)) {
-            domains.insert(match[1]);
-        } else
-        if (std::regex_match(line_cstr, match, reg_excepts)) {
-            excepts.insert(match[1]);
+        //auto line_cstr = line.c_str();
+        if (RE2::FullMatch(line, reg_hosts, &match)) {
+            //clog<<"Matched: [host]"<<line<<'\n';
+            hosts.insert(match);
+            continue;
+        }
+        if (RE2::FullMatch(line, reg_domains , &match)) {
+            //clog<<"Matched: [domain]"<<line<<'\n';
+            domains.insert(match);
+            continue;
+        }
+        if (RE2::FullMatch(line, reg_excepts, &match)) {
+            //clog<<"Matched: [exception]"<<line<<'\n';
+            excepts.insert(match);
         }
     }
 }
 
-void write_to_file(std::filesystem::path output, const std::unordered_set<std::string>* data, const std::regex* keys_to_remove, const size_t size, std::string prefix){
+void write_to_file(path output, const std::unordered_set<std::string>* data, const std::vector<RE2*>* regex_list, std::string prefix){
     ofstream out(output);
     for (auto && rec : *data){
-        for (int i = 0;i<size;++i){
-            if (std::regex_match(rec.c_str(),keys_to_remove[i])) {
+        for(const RE2* re : *regex_list){
+            if (RE2::FullMatch(rec,*re)) {
                 goto skipwrite;
             }
         }
@@ -64,6 +74,7 @@ int main(int argc, char** argv) {
     cxxopts::Options options("adblock2mosdns", "Translate adblock and hosts to mosdns format.");
     options.add_options()
         ("skip-download", "Skip download and use cache")
+        ("only-download", "Just download and skip parsing")
         ("h,help", "Print usage")
         ;
     auto result = options.parse(argc, argv);
@@ -73,12 +84,12 @@ int main(int argc, char** argv) {
         exit(0);
     }
 
-    std::filesystem::path myself(argv[0]);
-    std::filesystem::path parent = myself.parent_path();
-    std::filesystem::path path_link_file = parent / "links.txt";
-    std::filesystem::path path_keys_file = parent / "keys_to_remove.txt";
-    std::filesystem::path cache_dir = parent / "cache";
-    std::filesystem::path output_file = parent / "output.txt";
+    path myself(argv[0]);
+    path parent = myself.parent_path();
+    path path_link_file = parent / "links.txt";
+    path path_keys_file = parent / "keys_to_remove.txt";
+    path cache_dir = parent / "cache";
+    path output_file = parent / "output.txt";
     if (!std::filesystem::exists(path_link_file)) {
         std::cerr << "links.txt not found!" << endl;
         std::cerr << "Please create one at " << path_link_file << endl;
@@ -125,7 +136,9 @@ int main(int argc, char** argv) {
     } else {
         std::clog<< "Download skipped." << endl;
     }
-
+    if (result.count("download")) {
+        return 0;
+    }
 //    auto str = download(path_link_file);
 
     for (auto const& dir_entry : std::filesystem::directory_iterator{cache_dir}) {
@@ -146,29 +159,34 @@ int main(int argc, char** argv) {
     cout << hosts.size() << endl;
     cout << keys_to_remove.size() << endl;
 
-    char host_buffer[1024]{'\0'};
-    const char* host_patter = R"(([0-9a-zA-Z\-_\.]*\.)?%s)";
+    std::string host_pattern = R"(([0-9a-zA-Z\-_\.]*\.)?{})";
+    std::vector<RE2*> regex_list;
     ofstream output(output_file);
 
-    auto *to_remove_regex_list=new std::regex[keys_to_remove.size()];
-    for (auto&& to_remove : keys_to_remove){
-        host_buffer[0]='\0';
-        snprintf(host_buffer,1024,host_patter,to_remove.c_str());
-        to_remove_regex_list[count++] = std::string(host_buffer);
+    std::regex re(R"([-[\]{}()*+?.,\^$|#\s])");
+
+    std::string src;
+
+    RE2::Options option;
+    option.set_never_capture(true);
+    for(auto && i : keys_to_remove){
+        src = std::regex_replace(i,re,R"(\$&)");
+        regex_list.emplace_back(new RE2(fmt::vformat(host_pattern,fmt::make_format_args(src)),option));
     }
+        clog<<host_pattern<<'\n';
+
 
     // todo: split into more threads
-    // todo: google re2
-    // todo: escape domain chars
-    // todo: combine regex into one
-    std::thread th1(write_to_file, parent / "ad_domains.txt",&domains,to_remove_regex_list,count,"domain:");
-    std::thread th2(write_to_file, parent / "ad_hosts.txt",&hosts,to_remove_regex_list,count,"full:");
+    std::thread th1(write_to_file, parent / "ad_domains.txt",&domains,&regex_list,"domain:");
+    std::thread th2(write_to_file, parent / "ad_hosts.txt",&hosts,&regex_list,"full:");
 
 
 
     th1.join();
     th2.join();
-
+    for(auto i = regex_list.begin();i!=regex_list.end();++i){
+        delete *i;
+    }
 
     return 0;
 }

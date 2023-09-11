@@ -5,29 +5,29 @@
 #include <iostream>
 #include <ostream>
 #include <string>
-#include <unordered_set>
 #include <thread>
+#include <unordered_set>
 
-#include "downloader.hpp"
-#include "nlohmann/json.hpp"
 #include "cxxopts.hpp"
-#include "re2/re2.h"
+#include "downloader.hpp"
 #include "fmt/core.h"
+#include "nlohmann/json.hpp"
+#include "re2/re2.h"
 
-
-using std::cout;
-using std::endl;
 using std::cerr;
 using std::clog;
+using std::cout;
+using std::endl;
 using std::ofstream;
 using std::ostringstream;
 using json = nlohmann::json;
 
-using std::filesystem::path;
-using std::filesystem::exists;
 using std::filesystem::create_directories;
+using std::filesystem::exists;
+using std::filesystem::path;
 
-void parse(const path& input_file, std::unordered_set<std::string>& domains, std::unordered_set<std::string>& hosts, std::unordered_set<std::string>& excepts) {
+void parse(const path& input_file, std::unordered_set<std::string>& domains, std::unordered_set<std::string>& hosts,
+           std::unordered_set<std::string>& excepts) {
     std::ifstream in(input_file);
     std::string line;
 
@@ -36,50 +36,41 @@ void parse(const path& input_file, std::unordered_set<std::string>& domains, std
     RE2 reg_domains(R"(^\|{2}([0-9a-zA-Z\-_\.]*)\^$)");
     std::string match;
     while ((std::getline(in, line))) {
-        //auto line_cstr = line.c_str();
         if (RE2::FullMatch(line, reg_hosts, &match)) {
-            //clog<<"Matched: [host]"<<line<<'\n';
             hosts.insert(match);
             continue;
         }
-        if (RE2::FullMatch(line, reg_domains , &match)) {
-            //clog<<"Matched: [domain]"<<line<<'\n';
+        if (RE2::FullMatch(line, reg_domains, &match)) {
             domains.insert(match);
             continue;
         }
         if (RE2::FullMatch(line, reg_excepts, &match)) {
-            //clog<<"Matched: [exception]"<<line<<'\n';
             excepts.insert(match);
         }
     }
 }
 
-void write_to_file(path output, const std::unordered_set<std::string>* data, const std::vector<RE2*>* regex_list, std::string prefix){
+void write_to_file(path output, const std::unordered_set<std::string>* data, const std::vector<RE2*>* regex_list,
+                   std::string prefix) {
     ofstream out(output);
-    for (auto && rec : *data){
-        for(const RE2* re : *regex_list){
-            if (RE2::FullMatch(rec,*re)) {
+    for (auto&& rec : *data) {
+        for (const RE2* re : *regex_list) {
+            if (RE2::FullMatch(rec, *re)) {
                 goto skipwrite;
             }
         }
-        out<<prefix<<rec<<'\n';
-    skipwrite:
-        ;
+        out << prefix << rec << '\n';
+    skipwrite:;
     }
     out.close();
 }
 
 int main(int argc, char** argv) {
-
     cxxopts::Options options("adblock2mosdns", "Translate adblock and hosts to mosdns format.");
-    options.add_options()
-        ("skip-download", "Skip download and use cache")
-        ("only-download", "Just download and skip parsing")
-        ("h,help", "Print usage")
-        ;
+    options.add_options()("skip-download", "Skip download and use cache")(
+        "only-download", "Just download and skip parsing")("h,help", "Print usage");
     auto result = options.parse(argc, argv);
-    if (result.count("help"))
-    {
+    if (result.count("help")) {
         std::cout << options.help() << std::endl;
         exit(0);
     }
@@ -101,20 +92,17 @@ int main(int argc, char** argv) {
         exit(2);
     }
     create_directories(cache_dir);
-    if (!exists(cache_dir)){
-        cerr<<"Cache directory not exists, exiting."<<endl;
+    if (!exists(cache_dir)) {
+        cerr << "Cache directory not exists, exiting." << endl;
         exit(2);
     }
-//    return 0;
-
 
     std::unordered_set<std::string> hosts;
     std::unordered_set<std::string> domains;
     std::unordered_set<std::string> keys_to_remove;
 
-
     std::ifstream in;
-    if(!result.count("skip-download")) {
+    if (!result.count("skip-download")) {
         in.open(path_link_file);
         if (in.is_open()) {
             std::string line;
@@ -134,15 +122,14 @@ int main(int argc, char** argv) {
         }
         in.close();
     } else {
-        std::clog<< "Download skipped." << endl;
+        std::clog << "Download skipped." << endl;
     }
     if (result.count("download")) {
         return 0;
     }
-//    auto str = download(path_link_file);
 
     for (auto const& dir_entry : std::filesystem::directory_iterator{cache_dir}) {
-        parse(dir_entry.path(),domains,hosts,keys_to_remove);
+        parse(dir_entry.path(), domains, hosts, keys_to_remove);
     }
 
     in.open(path_keys_file);
@@ -169,22 +156,19 @@ int main(int argc, char** argv) {
 
     RE2::Options option;
     option.set_never_capture(true);
-    for(auto && i : keys_to_remove){
-        src = std::regex_replace(i,re,R"(\$&)");
-        regex_list.emplace_back(new RE2(fmt::vformat(host_pattern,fmt::make_format_args(src)),option));
+    for (auto&& i : keys_to_remove) {
+        src = std::regex_replace(i, re, R"(\$&)");
+        regex_list.emplace_back(new RE2(fmt::vformat(host_pattern, fmt::make_format_args(src)), option));
     }
-        clog<<host_pattern<<'\n';
-
+    clog << host_pattern << '\n';
 
     // todo: split into more threads
-    std::thread th1(write_to_file, parent / "ad_domains.txt",&domains,&regex_list,"domain:");
-    std::thread th2(write_to_file, parent / "ad_hosts.txt",&hosts,&regex_list,"full:");
-
-
+    std::thread th1(write_to_file, parent / "ad_domains.txt", &domains, &regex_list, "domain:");
+    std::thread th2(write_to_file, parent / "ad_hosts.txt", &hosts, &regex_list, "full:");
 
     th1.join();
     th2.join();
-    for(auto i = regex_list.begin();i!=regex_list.end();++i){
+    for (auto i = regex_list.begin(); i != regex_list.end(); ++i) {
         delete *i;
     }
 

@@ -30,23 +30,26 @@ void parse(const path& input_file, std::unordered_set<std::string>& domains, std
            std::unordered_set<std::string>& excepts) {
     std::ifstream in(input_file);
     std::string line;
-
+    // cout << input_file << endl;
     RE2 reg_hosts(R"(^[0-9a-zA-Z\.\:]{1,}(?:\t| ){1,}(\S*))");
     RE2 reg_excepts(R"(^@{2}\|{2}([0-9a-zA-Z\-_\.]*)(?:\^?|\/)\S*)");
-    RE2 reg_domains(R"(^\|{2}([0-9a-zA-Z\-_\.]*)\^$)");
+    std::regex reg_domains(
+        R"((?:^\|{2}([0-9a-zA-Z\-_\.]*)\^$)|(?:^address=\/([0-9a-zA-Z\-_\.]*)\/$)|(?:^([0-9a-zA-Z\-_\.]{1,})$))");
     std::string match;
+    std::cmatch cm;
     while ((std::getline(in, line))) {
+        // cout << line << endl;
         if (RE2::FullMatch(line, reg_hosts, &match)) {
             hosts.insert(match);
             continue;
         }
-        if (RE2::FullMatch(line, reg_domains, &match)) {
-            domains.insert(match);
+        if (std::regex_match(line.c_str(), cm, reg_domains)) {
+            domains.insert(cm[cm.size() - 1]);
             continue;
         }
-        if (RE2::FullMatch(line, reg_excepts, &match)) {
-            excepts.insert(match);
-        }
+        // if (RE2::FullMatch(line, reg_excepts, &match)) {
+        //     excepts.insert(match);
+        // }
     }
 }
 
@@ -54,13 +57,13 @@ void write_to_file(path output, const std::unordered_set<std::string>* data, con
                    std::string prefix) {
     ofstream out(output);
     for (auto&& rec : *data) {
-        for (const RE2* re : *regex_list) {
-            if (RE2::FullMatch(rec, *re)) {
-                goto skipwrite;
-            }
-        }
+        // for (const RE2* re : *regex_list) {
+        //     if (RE2::FullMatch(rec, *re)) {
+        //         goto skipwrite;
+        //     }
+        // }
         out << prefix << rec << '\n';
-    skipwrite:;
+        // skipwrite:;
     }
     out.close();
 }
@@ -146,21 +149,23 @@ int main(int argc, char** argv) {
     cout << hosts.size() << endl;
     cout << keys_to_remove.size() << endl;
 
-    std::string host_pattern = R"(([0-9a-zA-Z\-_\.]*\.)?{})";
+    // std::string host_pattern = R"(([0-9a-zA-Z\-_\.]*\.)?{})";
     std::vector<RE2*> regex_list;
     ofstream output(output_file);
 
-    std::regex re(R"([-[\]{}()*+?.,\^$|#\s])");
+    // std::regex re(R"([-[\]{}()*+?.,\^$|#\s])");
 
     std::string src;
 
-    RE2::Options option;
-    option.set_never_capture(true);
-    for (auto&& i : keys_to_remove) {
-        src = std::regex_replace(i, re, R"(\$&)");
-        regex_list.emplace_back(new RE2(fmt::vformat(host_pattern, fmt::make_format_args(src)), option));
+    // RE2::Options option;
+    // option.set_never_capture(true);
+    for (auto& i : keys_to_remove) {
+        // src = std::regex_replace(i, re, R"(\$&)");
+        // regex_list.emplace_back(new RE2(fmt::vformat(host_pattern, fmt::make_format_args(src)), option));
+        domains.erase(i);
+        hosts.erase(i);
     }
-    clog << host_pattern << '\n';
+    // clog << host_pattern << '\n';
 
     // todo: split into more threads
     std::thread th1(write_to_file, parent / "ad_domains.txt", &domains, &regex_list, "domain:");
@@ -168,9 +173,9 @@ int main(int argc, char** argv) {
 
     th1.join();
     th2.join();
-    for (auto i = regex_list.begin(); i != regex_list.end(); ++i) {
-        delete *i;
-    }
+    // for (auto i = regex_list.begin(); i != regex_list.end(); ++i) {
+    //     delete *i;
+    // }
 
     return 0;
 }

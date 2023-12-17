@@ -4,6 +4,8 @@ project(rule2mosdns)
 
 set(CMAKE_CXX_STANDARD 20)
 
+SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
 include(FetchContent)
 
 find_package(curlcpp)
@@ -90,6 +92,6 @@ target_link_libraries(${PROJECT_NAME} nlohmann_json::nlohmann_json downloader cx
 #target_link_libraries(hosts2dset downloader)
 
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/links.txt
-     DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+     DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/keys_to_remove.txt
-     DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+     DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
